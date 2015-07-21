@@ -19,17 +19,36 @@
       <h1>
 <a id="objective-c-里消息调用的一个优化技巧" class="anchor" href="#objective-c-%E9%87%8C%E6%B6%88%E6%81%AF%E8%B0%83%E7%94%A8%E7%9A%84%E4%B8%80%E4%B8%AA%E4%BC%98%E5%8C%96%E6%8A%80%E5%B7%A7" aria-hidden="true"><span class="octicon octicon-link"></span></a>Objective-C 里消息调用的一个优化技巧</h1>
 
-<p>在iOS开发中，支持多种同步方法，我们从耗时角度出发，评估各种同步对象的性能</p>
+<p>这里介绍一个小优化技巧，消息调用优化。一般情况下不需要这么做，在大循环里也许可以用到。我自己就从来没这么用过，不过值得给大家介绍一下。 objc的消息调用有一定cpu损耗在方法查询上，虽然非常小，但是当循环次数多时候，使用objc runtime方法分离开消息查找和调用就个很好的方法。例如下面的代码：</p>
 
-<pre><code> 1.synchronized
- 2.NSLock
- 3.NSCondition
- 4.NSConditionLock
- 5.NSRecursiveLock
- 6.pthread_mutex_t
- 7.OSSpinLock
- 8.dispatch_barrier_async
+<pre><code>for (int i = 0; i &lt; 100000000; i++)     
+    [someObject messageWithInt:i]; 
 </code></pre>
+
+<p>可以改写成：</p>
+
+<pre><code>SEL theSelector = @selector(messageWithInt:);
+IMP theMethod = [someObject methodForSelector:theSelector];
+for (int i = 0; i &lt; 100000000; i++)   
+    theMethod (someObject, theSelector, i); 
+</code></pre>
+
+<p>这样可以让objc方法查找过程只执行1遍。循环内直接调用方法实现即可。</p>
+
+<p>这种方法需要非常注意的一点是，IMP是一个 void* 函数的 typedef 如果调用的函数有返回值，就需要非常谨慎了。你可以使用如下的形式：</p>
+
+<pre><code>typedef float (*MyMethodIMP)(id,SEL,int);  
+SEL theSel = @selector(messageWithInt:); 
+MyMethodIMP theMethod = (MyMethodIMP)[someObject methodForSelector:theSel]; 
+
+float result = 0.0;  
+for (int i = 0; i &lt; 100000000; i++)     
+    result += theMethod (someObject, theSel, i); 
+</code></pre>
+
+<p>这种优化方法不适合少次数的方法调用，实际上，分离后少次数调用速度有时候会比传统方法还慢一些。至于多少次适合，以自己做的测试为准。</p>
+
+<p>无论如何，当优化代码时候要格外谨慎。</p>
 
       <footer class="site-footer">
 
